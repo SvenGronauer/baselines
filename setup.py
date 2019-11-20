@@ -32,7 +32,7 @@ setup(name='baselines',
       packages=[package for package in find_packages()
                 if package.startswith('baselines')],
       install_requires=[
-          'tf-nightly-2.0-preview',
+          # 'tf-nightly-2.0-preview', removed nightly dependency
           'gym',
           'scipy',
           'tqdm',
