@@ -120,9 +120,9 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
     if eval_env is not None:
         eval_runner = Runner(env = eval_env, model = model, nsteps = nsteps, gamma = gamma, lam= lam)
 
-    epinfobuf = deque(maxlen=100)
+    epinfobuf = deque(maxlen=10)  # this smooths over the last "maxlen" elements
     if eval_env is not None:
-        eval_epinfobuf = deque(maxlen=100)
+        eval_epinfobuf = deque(maxlen=10)
 
     # Start total timer
     tfirststart = time.perf_counter()
@@ -137,12 +137,14 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
         lrnow = lr(frac)
         cliprangenow = cliprange(frac)
 
-        if update % log_interval == 0 and is_mpi_root: logger.info('Stepping environment...')
+        if update % log_interval == 0 and is_mpi_root:
+            logger.info('Stepping environment...')
 
         # Get minibatch
         obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run() #pylint: disable=E0632
         if eval_env is not None:
-            eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_states, eval_epinfos = eval_runner.run() #pylint: disable=E0632
+            # eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_states, eval_epinfos = eval_runner.run() #pylint: disable=E0632
+            _, _, _, _, _, _, _, eval_epinfos = eval_runner.run(training=False)
 
         epinfobuf.extend(epinfos)
         if eval_env is not None:
@@ -179,13 +181,17 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
             logger.logkv("misc/serial_timesteps", update*nsteps)
             logger.logkv("misc/nupdates", update)
             logger.logkv("misc/total_timesteps", update*nbatch)
-            logger.logkv("fps", fps)
+            logger.logkv("misc/fps", fps)
             logger.logkv("misc/explained_variance", float(ev))
-            logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
-            logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
+            # this smooths over the last 100 elements
+            logger.logkv('train/episode/reward_mean', safemean([epinfo['r'] for epinfo in epinfobuf]))
+            logger.logkv('train/episode/reward_std', safestd([epinfo['r'] for epinfo in epinfobuf]))
+            logger.logkv('train/episode/ep_length_mean', safemean([epinfo['l'] for epinfo in epinfobuf]))
             if eval_env is not None:
-                logger.logkv('eval_eprewmean', safemean([epinfo['r'] for epinfo in eval_epinfobuf]) )
-                logger.logkv('eval_eplenmean', safemean([epinfo['l'] for epinfo in eval_epinfobuf]) )
+                eval_rewards = [epinfo['r'] for epinfo in eval_epinfobuf]
+                logger.logkv('eval/episode/reward_mean', safemean(eval_rewards))
+                logger.logkv('eval/episode/reward_std', safestd(eval_rewards))
+                logger.logkv('eval/episode/ep_length_mean', safemean([epinfo['l'] for epinfo in eval_epinfobuf]) )
             logger.logkv('misc/time_elapsed', tnow - tfirststart)
             for (lossval, lossname) in zip(lossvals, model.loss_names):
                 logger.logkv('loss/' + lossname, lossval)
@@ -193,8 +199,13 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
             logger.dumpkvs()
 
     return model
+
 # Avoid division error when calculate the mean (in our case if epinfo is empty returns np.nan, not return an error)
 def safemean(xs):
-    return np.nan if len(xs) == 0 else np.mean(xs)
+    return np.nan if len(xs) == 0 else float(np.mean(xs))
+
+def safestd(xs):
+    return float(np.std(xs)) if safemean(xs) is not np.nan else np.nan
+
 
 

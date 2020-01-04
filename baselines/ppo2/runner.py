@@ -18,7 +18,7 @@ class Runner(AbstractEnvRunner):
         # Discount rate
         self.gamma = gamma
 
-    def run(self):
+    def run(self, training=True):
         # Here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
         mb_states = self.states
@@ -28,7 +28,7 @@ class Runner(AbstractEnvRunner):
             # Given observations, get action value and neglopacs
             # We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
             obs = tf.constant(self.obs)
-            actions, values, self.states, neglogpacs = self.model.step(obs)
+            actions, values, self.states, neglogpacs = self.model.step(obs, training=training)
             actions = actions._numpy()
             mb_obs.append(self.obs.copy())
             mb_actions.append(actions)

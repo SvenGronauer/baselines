@@ -29,7 +29,7 @@ def nature_cnn(input_shape, **conv_kwargs):
     return network
 
 @register("mlp")
-def mlp(num_layers=2, num_hidden=64, activation=tf.tanh):
+def mlp(num_layers=2, num_hidden=64, activation=tf.tanh, **kwargs):
     """
     Stack of fully-connected layers to be used in a policy / q-function approximator
 

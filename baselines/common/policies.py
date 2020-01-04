@@ -39,7 +39,7 @@ class PolicyWithValue(tf.Module):
             self.value_fc = fc(self.value_network.output_shape, 'vf', 1)
 
     @tf.function
-    def step(self, observation):
+    def step(self, observation, training):
         """
         Compute next action(s) given the observation(s)
 
@@ -55,7 +55,7 @@ class PolicyWithValue(tf.Module):
 
         latent = self.policy_network(observation)
         pd, pi = self.pdtype.pdfromlatent(latent)
-        action = pd.sample()
+        action = pd.sample() if training else pd.mode()  # do not sample during evaluation
         neglogp = pd.neglogp(action)
         value_latent = self.value_network(observation)
         vf = tf.squeeze(self.value_fc(value_latent), axis=1)
