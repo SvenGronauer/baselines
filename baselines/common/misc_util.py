@@ -46,6 +46,8 @@ class EzPickle(object):
 
 
 def set_global_seeds(i):
+    print('WARNING: Global seed is set by sacred framework!')
+    return None
     try:
         import MPI
         rank = MPI.COMM_WORLD.Get_rank()

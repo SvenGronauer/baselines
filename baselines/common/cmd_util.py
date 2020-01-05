@@ -19,6 +19,7 @@ from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.common import retro_wrappers
 
 def make_vec_env(env_id, env_type, num_env, seed,
+                 parameter_distribution,
                  wrapper_kwargs=None,
                  start_index=0,
                  reward_scale=1.0,
@@ -29,7 +30,9 @@ def make_vec_env(env_id, env_type, num_env, seed,
     """
     wrapper_kwargs = wrapper_kwargs or {}
     mpi_rank = MPI.COMM_WORLD.Get_rank() if MPI else 0
-    seed = seed + 10000 * mpi_rank if seed is not None else None
+    if mpi_rank > 0 and seed is not None:
+        print('INFO: changed seed from {} to {} because of MPI.'.format(seed, seed+10000*mpi_rank))
+    # seed = seed + 10000 * mpi_rank if seed is not None else None
     logger_dir = logger.get_dir()
     def make_thunk(rank):
         return lambda: make_env(
@@ -38,6 +41,7 @@ def make_vec_env(env_id, env_type, num_env, seed,
             mpi_rank=mpi_rank,
             subrank=rank,
             seed=seed,
+            parameter_distribution=parameter_distribution,
             reward_scale=reward_scale,
             gamestate=gamestate,
             flatten_dict_observations=flatten_dict_observations,
@@ -45,14 +49,15 @@ def make_vec_env(env_id, env_type, num_env, seed,
             logger_dir=logger_dir
         )
 
-    set_global_seeds(seed)
+    # set_global_seeds(seed)  # Global seeds are set by sacred framework!
     if num_env > 1:
+        print('WARNING: Using SubprocVecEnv threatens reproducibility.')
         return SubprocVecEnv([make_thunk(i + start_index) for i in range(num_env)])
     else:
         return DummyVecEnv([make_thunk(start_index)])
 
 
-def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.0, gamestate=None, flatten_dict_observations=True, wrapper_kwargs=None, logger_dir=None):
+def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, parameter_distribution=False, reward_scale=1.0, gamestate=None, flatten_dict_observations=True, wrapper_kwargs=None, logger_dir=None):
     wrapper_kwargs = wrapper_kwargs or {}
     if env_type == 'atari':
         env = make_atari(env_id)
@@ -67,7 +72,10 @@ def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.
         keys = env.observation_space.spaces.keys()
         env = gym.wrappers.FlattenDictWrapper(env, dict_keys=list(keys))
 
-    env.seed(seed + subrank if seed is not None else None)
+    # env.seed(seed + subrank if seed is not None else None)  # TODO changed
+    env.seed(seed)
+    if parameter_distribution:
+        env.enable_parameter_distribution()
     env = Monitor(env,
                   logger_dir and os.path.join(logger_dir, str(mpi_rank) + '.' + str(subrank)),
                   allow_early_resets=True)

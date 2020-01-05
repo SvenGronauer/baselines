@@ -76,7 +76,7 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
 
     '''
 
-    set_global_seeds(seed)
+    # set_global_seeds(seed)
 
     if isinstance(lr, float): lr = constfn(lr)
     else: assert callable(lr)
