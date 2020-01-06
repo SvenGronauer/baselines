@@ -141,12 +141,12 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
             logger.info('Stepping environment...')
 
         # Get minibatch
-        obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run() #pylint: disable=E0632
+        obs, returns, masks, actions, values, neglogpacs, states, epinfo = runner.run(training=True)
         if eval_env is not None:
             # eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_states, eval_epinfos = eval_runner.run() #pylint: disable=E0632
             _, _, _, _, _, _, _, eval_epinfos = eval_runner.run(training=False)
 
-        epinfobuf.extend(epinfos)
+        epinfobuf.extend(epinfo)
         if eval_env is not None:
             eval_epinfobuf.extend(eval_epinfos)
 

@@ -46,7 +46,10 @@ class PolicyWithValue(tf.Module):
         Parameters:
         ----------
 
-        observation     batched observation data
+        observation: np.ndarray
+            batched observation data
+        training:   bool
+            Sample from action distribution if True, else take the mode of prob. dist.
 
         Returns:
         -------

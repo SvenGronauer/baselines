@@ -14,6 +14,6 @@ class AbstractEnvRunner(ABC):
         self.dones = [False for _ in range(nenv)]
 
     @abstractmethod
-    def run(self):
+    def run(self, training):
         raise NotImplementedError
 
