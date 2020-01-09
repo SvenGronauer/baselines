@@ -96,9 +96,9 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
         policy_network_fn = get_network_builder(network_type)(**network_kwargs)
         network = policy_network_fn(ob_space.shape)
 
-    # Calculate the batch_size
+    # Calculate the mini_batch_size
     nbatch = nenvs * nsteps
-    nbatch_train = nbatch // nminibatches
+    mini_batch_size = nbatch // nminibatches
     is_mpi_root = (MPI is None or MPI.COMM_WORLD.Get_rank() == 0)
 
     # Instantiate the model object (that creates act_model and train_model)
@@ -138,7 +138,7 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
         cliprangenow = cliprange(frac)
 
         if update % log_interval == 0 and is_mpi_root:
-            logger.info('Stepping environment...')
+            logger.info('Update {}/{}: Stepping environment...'.format(update, nupdates))
 
         # Get minibatch
         obs, returns, masks, actions, values, neglogpacs, states, epinfo = runner.run(training=True)
@@ -153,15 +153,15 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
         # Here what we're going to do is for each minibatch calculate the loss and append it.
         mblossvals = []
         if states is None: # nonrecurrent version
-            # Index of each element of batch_size
+            # Index of each element of mini_batch_size
             # Create the indices array
             inds = np.arange(nbatch)
             for _ in range(noptepochs):
                 # Randomize the indexes
                 np.random.shuffle(inds)
-                # 0 to batch_size with batch_train_size step
-                for start in range(0, nbatch, nbatch_train):
-                    end = start + nbatch_train
+                # 0 to mini_batch_size with batch_train_size step
+                for start in range(0, nbatch, mini_batch_size):
+                    end = start + mini_batch_size
                     mbinds = inds[start:end]
                     slices = (tf.constant(arr[mbinds]) for arr in (obs, returns, masks, actions, values, neglogpacs))
                     mblossvals.append(model.train(lrnow, cliprangenow, *slices))
@@ -182,6 +182,7 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
             logger.logkv("misc/nupdates", update)
             logger.logkv("misc/total_timesteps", update*nbatch)
             logger.logkv("misc/fps", fps)
+            logger.logkv("misc/mini_batch_size", mini_batch_size)
             logger.logkv("misc/explained_variance", float(ev))
             # this smooths over the last 100 elements
             logger.logkv('train/episode/reward_mean', safemean([epinfo['r'] for epinfo in epinfobuf]))
