@@ -7,6 +7,18 @@ class RunningMeanStd(object):
         self.var = np.ones(shape, 'float64')
         self.count = epsilon
 
+    def set(self, mean: np.ndarray, var: np.ndarray, count: int):
+        assert isinstance(mean, np.ndarray) and mean.shape == self.mean.shape
+        assert isinstance(var, np.ndarray) and var.shape == self.var.shape
+        assert isinstance(count, float)
+
+        self.mean = mean
+        self.var = var
+        self.count = count
+
+    def get_values(self):
+        return self.__dict__
+
     def update(self, x):
         batch_mean = np.mean(x, axis=0)
         batch_var = np.var(x, axis=0)

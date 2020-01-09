@@ -160,7 +160,7 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
                 # Randomize the indexes
                 np.random.shuffle(inds)
                 # 0 to mini_batch_size with batch_train_size step
-                for start in range(0, nbatch, mini_batch_size):
+                for start in range(0, nbatch, mini_batch_size):  # iterate nminibatches times
                     end = start + mini_batch_size
                     mbinds = inds[start:end]
                     slices = (tf.constant(arr[mbinds]) for arr in (obs, returns, masks, actions, values, neglogpacs))
