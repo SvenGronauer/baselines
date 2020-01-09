@@ -5,18 +5,24 @@ class RunningMeanStd(object):
     def __init__(self, epsilon=1e-4, shape=()):
         self.mean = np.zeros(shape, 'float64')
         self.var = np.ones(shape, 'float64')
-        self.count = epsilon
+        self.count = np.array([epsilon])
 
-    def set(self, mean: np.ndarray, var: np.ndarray, count: int):
+    def set(self, mean: np.ndarray, var: np.ndarray, count: np.ndarray):
         assert isinstance(mean, np.ndarray) and mean.shape == self.mean.shape
         assert isinstance(var, np.ndarray) and var.shape == self.var.shape
-        assert isinstance(count, float)
+        assert isinstance(count,  np.ndarray) and count.shape == self.count.shape
 
         self.mean = mean
         self.var = var
         self.count = count
 
     def get_values(self):
+        """Returns the copied values of the class attributes."""
+        return self.__dict__.values()
+        # return self.mean, self.var, self.count
+
+    def get_dict(self):
+        """Returns a dictionary holding the class attributes."""
         return self.__dict__
 
     def update(self, x):

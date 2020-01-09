@@ -106,7 +106,7 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
         from baselines.ppo2.model import Model
         model_fn = Model
 
-    model = model_fn(ac_space=ac_space, policy_network=network, ent_coef=ent_coef, vf_coef=vf_coef,
+    model = model_fn(env=env, policy_network=network, ent_coef=ent_coef, vf_coef=vf_coef,
                      max_grad_norm=max_grad_norm)
 
     if load_path is not None:
@@ -195,7 +195,7 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
                 logger.logkv('eval/episode/ep_length_mean', safemean([epinfo['l'] for epinfo in eval_epinfobuf]) )
             logger.logkv('misc/time_elapsed', tnow - tfirststart)
             for (lossval, lossname) in zip(lossvals, model.loss_names):
-                logger.logkv('loss/' + lossname, lossval)
+                logger.logkv('loss/' + lossname, float(lossval))
 
             logger.dumpkvs()
 

@@ -21,8 +21,9 @@ class Model(tf.Module):
     save/load():
     - Save load the model
     """
-    def __init__(self, *, ac_space, policy_network, value_network=None, ent_coef, vf_coef, max_grad_norm):
+    def __init__(self, *, env, policy_network, value_network=None, ent_coef, vf_coef, max_grad_norm):
         super(Model, self).__init__(name='PPO2Model')
+        ac_space = env.action_space
         self.train_model = PolicyWithValue(ac_space, policy_network, value_network, estimate_q=False)
         if MPI is not None:
           self.optimizer = MpiAdamOptimizer(MPI.COMM_WORLD, self.train_model.trainable_variables)
@@ -37,6 +38,8 @@ class Model(tf.Module):
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac']
         if MPI is not None:
           sync_from_root(self.variables)
+
+        self.set_env_params(*env.ob_rms.get_values())
 
     def train(self, lr, cliprange, obs, returns, masks, actions, values, neglogpac_old, states=None):
         grads, pg_loss, vf_loss, entropy, approxkl, clipfrac = self.get_grad(
@@ -88,3 +91,11 @@ class Model(tf.Module):
         if MPI is not None:
             grads = tf.concat([tf.reshape(g, (-1,)) for g in grads], axis=0)
         return grads, pg_loss, vf_loss, entropy, approxkl, clipfrac
+
+    def get_env_params(self):
+        return self.env_obs_mean.numpy(), self.env_obs_var.numpy(), self.env_obs_count.numpy()
+
+    def set_env_params(self, mean, var, count):
+        self.env_obs_mean = tf.Variable(mean, name='env_obs_mean')
+        self.env_obs_var = tf.Variable(var, name='env_obs_var')
+        self.env_obs_count = tf.Variable(count, name='env_obs_count')
