@@ -51,7 +51,7 @@ class Runner(AbstractEnvRunner):
         mb_values = np.asarray(mb_values, dtype=np.float32)
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        last_values = self.model.value(tf.constant(self.obs))._numpy()
+        last_values = self.model.value(tf.constant(self.obs), training)._numpy()
 
         # discount/bootstrap off value fn
         mb_returns = np.zeros_like(mb_rewards)

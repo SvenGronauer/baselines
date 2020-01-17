@@ -64,11 +64,11 @@ class Model(tf.Module):
         advs = (advs - tf.reduce_mean(advs)) / (tf.keras.backend.std(advs) + 1e-8)
 
         with tf.GradientTape() as tape:
-            policy_latent = self.train_model.policy_network(obs)
+            policy_latent = self.train_model.policy_network(obs, training=True)  # called by train() method
             pd, _ = self.train_model.pdtype.pdfromlatent(policy_latent)
             neglogpac = pd.neglogp(actions)
             entropy = tf.reduce_mean(pd.entropy())
-            vpred = self.train_model.value(obs)
+            vpred = self.train_model.value(obs, training=True)  # called by train() method
             vpredclipped = values + tf.clip_by_value(vpred - values, -cliprange, cliprange)
             vf_losses1 = tf.square(vpred - returns)
             vf_losses2 = tf.square(vpredclipped - returns)

@@ -29,7 +29,7 @@ def nature_cnn(input_shape, **conv_kwargs):
     return network
 
 @register("mlp")
-def mlp(num_layers=2, num_hidden=64, activation=tf.tanh, **kwargs):
+def mlp(num_layers=2, num_hidden=64, activation=tf.tanh, dropout=False, dropout_rate=0.5, **kwargs):
     """
     Stack of fully-connected layers to be used in a policy / q-function approximator
 
@@ -48,17 +48,36 @@ def mlp(num_layers=2, num_hidden=64, activation=tf.tanh, **kwargs):
     function that builds fully connected network with a given input tensor / placeholder
     """
     def network_fn(input_shape):
-        print('input shape is {}'.format(input_shape))
-        x_input = tf.keras.Input(shape=input_shape)
-        # h = tf.keras.layers.Flatten(x_input)
-        h = x_input
-        for i in range(num_layers):
-          h = tf.keras.layers.Dense(units=num_hidden, kernel_initializer=ortho_init(np.sqrt(2)),
-                                    name='mlp_fc{}'.format(i), activation=activation)(h)
 
-        network = tf.keras.Model(inputs=[x_input], outputs=[h])
-        return network
+        class MyModel(tf.keras.Model):
+            def __init__(self):
+                super(MyModel, self).__init__()
+                self._layers = []
+                for i in range(num_layers):
+                    d = tf.keras.layers.Dense(units=num_hidden,
+                                              kernel_initializer=ortho_init(np.sqrt(2)),
+                                              name=f'mlp_fc{i}', activation=activation)
+                    self._layers.append(d)
+                self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
+                self.init_weights_biases()
+                self.out_shape = (None, num_hidden)
+
+            def call(self, inputs, training):
+                x = inputs
+                for lay in self._layers:
+                    x = lay(x)
+                    x = self.dropout(x, training=training)
+                return x
+
+            def init_weights_biases(self):
+                """ perform forward-pass to init weights and biases"""
+                fake_pass_shape = (1,) + input_shape
+                self.call(tf.ones(fake_pass_shape), training=True)
+
+        net = MyModel()
+        return net
+    
     return network_fn
 
 
