@@ -21,7 +21,17 @@ class Model(tf.Module):
     save/load():
     - Save load the model
     """
-    def __init__(self, *, env, policy_network, value_network=None, ent_coef, vf_coef, max_grad_norm):
+    norm_types = ['L1', 'L2']
+
+    def __init__(self,
+                 *,
+                 env,
+                 policy_network,
+                 value_network=None,
+                 ent_coef,
+                 vf_coef,
+                 norm_kwargs,
+                 max_grad_norm):
         super(Model, self).__init__(name='PPO2Model')
         ac_space = env.action_space
         self.train_model = PolicyWithValue(ac_space, policy_network, value_network, estimate_q=False)
@@ -31,6 +41,17 @@ class Model(tf.Module):
           self.optimizer = tf.keras.optimizers.Adam()
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
+        self.norm_kwargs = norm_kwargs
+        self.norm_apply = norm_kwargs['apply']
+        self.norm_coef = tf.constant(norm_kwargs['coefficient']) if self.norm_apply else tf.constant(0.)
+        self.norm_type = norm_kwargs['type']
+
+        assert self.norm_type in Model.norm_types, 'Choose L1 or L2 as norm.'
+        if self.norm_type == 'L1':
+            self.norm_func = lambda xs: tf.norm(xs, ord=1)
+        else:
+            self.norm_func = lambda xs: tf.nn.l2_loss(xs)
+
         self.max_grad_norm = max_grad_norm
         self.step = self.train_model.step
         self.value = self.train_model.value
@@ -52,7 +73,6 @@ class Model(tf.Module):
             self.optimizer.apply_gradients(grads_and_vars)
 
         return pg_loss, vf_loss, entropy, approxkl, clipfrac
-
 
     @tf.function
     def get_grad(self, cliprange, obs, returns, masks, actions, values, neglogpac_old):
@@ -82,7 +102,14 @@ class Model(tf.Module):
             approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - neglogpac_old))
             clipfrac = tf.reduce_mean(tf.cast(tf.greater(tf.abs(ratio - 1.0), cliprange), tf.float32))
 
-            loss = pg_loss - entropy * self.ent_coef + vf_loss * self.vf_coef
+            if self.norm_apply:
+                adds = [self.norm_func(v) for v in self.train_model.trainable_variables]
+                norm_loss = tf.add_n(adds)
+            else:
+                norm_loss = tf.constant(0.)
+
+            loss = pg_loss - entropy * self.ent_coef + vf_loss * self.vf_coef \
+                   + norm_loss * self.norm_coef
 
         var_list = self.train_model.trainable_variables
         grads = tape.gradient(loss, var_list)
