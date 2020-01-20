@@ -72,7 +72,7 @@ def mlp(num_layers=2, num_hidden=64, activation=tf.tanh, dropout=False, dropout_
                                               kernel_initializer=ortho_init(np.sqrt(2)),
                                               name=f'mlp_fc{i}', activation=activation)
                     self._layers.append(d)
-                self.dropout = tf.keras.layers.Dropout(dropout_rate)
+                self.dropout = tf.keras.layers.Dropout(dropout_rate) if dropout else None
 
                 self.init_weights_biases()
                 self.out_shape = (None, num_hidden)
@@ -81,13 +81,14 @@ def mlp(num_layers=2, num_hidden=64, activation=tf.tanh, dropout=False, dropout_
                 x = inputs
                 for lay in self._layers:
                     x = lay(x)
-                    x = self.dropout(x, training=training)
+                    if self.dropout is not None:
+                        x = self.dropout(x, training=training)
                 return x
 
             def init_weights_biases(self):
                 """ perform forward-pass to init weights and biases"""
                 fake_pass_shape = (1,) + input_shape
-                self.call(tf.ones(fake_pass_shape), training=True)
+                self.call(tf.ones(fake_pass_shape), training=False)
 
         net = MyModel()
         return net
