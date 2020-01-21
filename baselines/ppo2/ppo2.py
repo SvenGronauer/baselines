@@ -21,8 +21,7 @@ def learn(*,
           network,
           env,
           total_timesteps,
-          norm_kwargs,
-          eval_env = None,
+          eval_env=None,
           seed=None,
           nsteps=2048,
           ent_coef=0.0,
@@ -128,7 +127,6 @@ def learn(*,
                      policy_network=network,
                      ent_coef=ent_coef,
                      vf_coef=vf_coef,
-                     norm_kwargs=norm_kwargs,
                      max_grad_norm=max_grad_norm)
 
     if load_path is not None:

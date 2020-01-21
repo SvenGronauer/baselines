@@ -29,7 +29,15 @@ def nature_cnn(input_shape, **conv_kwargs):
     return network
 
 @register("mlp")
-def mlp(num_layers=2, num_hidden=64, activation=tf.tanh, dropout=False, dropout_rate=0.5, **kwargs):
+def mlp(num_layers=2,
+        num_hidden=64,
+        activation=tf.tanh,
+        dropout=False,
+        dropout_rate=0.5,
+        norm_apply=True,
+        norm_type='L2',
+        norm_coefficient=1.0e-4,
+        **kwargs):
     """
     Stack of fully-connected layers to be used in a policy / q-function approximator
 
@@ -66,16 +74,30 @@ def mlp(num_layers=2, num_hidden=64, activation=tf.tanh, dropout=False, dropout_
         class MyModel(tf.keras.Model):
             def __init__(self):
                 super(MyModel, self).__init__()
-                self._layers = []
-                for i in range(num_layers):
-                    d = tf.keras.layers.Dense(units=num_hidden,
-                                              kernel_initializer=ortho_init(np.sqrt(2)),
-                                              name=f'mlp_fc{i}', activation=activation)
-                    self._layers.append(d)
+                self.num_layers = num_layers
+                self.norm_apply = norm_apply
+                self._layers = self.build_layers()
                 self.dropout = tf.keras.layers.Dropout(dropout_rate) if dropout else None
 
                 self.init_weights_biases()
                 self.out_shape = (None, num_hidden)
+
+            def build_layers(self):
+                _layers = []
+                if self.norm_apply:
+                    assert norm_type == 'L1' or norm_type == 'L2', 'Choose L1 or L2 norm.'
+                    assert norm_coefficient > 0.0, 'Norm co-efficient must be greater than zero.'
+                    kernel_regularizer = tf.keras.regularizers.l1(norm_coefficient) \
+                        if norm_type == 'L1' else tf.keras.regularizers.l2(norm_coefficient)
+                else:
+                    kernel_regularizer = None
+                for i in range(self.num_layers):
+                    d = tf.keras.layers.Dense(units=num_hidden,
+                                              kernel_initializer=ortho_init(np.sqrt(2)),
+                                              kernel_regularizer=kernel_regularizer,
+                                              name=f'mlp_fc{i}', activation=activation)
+                    _layers.append(d)
+                return _layers
 
             def call(self, inputs, training):
                 x = inputs
