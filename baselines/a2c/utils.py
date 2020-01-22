@@ -24,10 +24,29 @@ def conv(scope, *, nf, rf, stride, activation, pad='valid', init_scale=1.0, data
                                        data_format=data_format, kernel_initializer=ortho_init(init_scale))
     return layer
 
-def fc(input_shape, scope, nh, *, init_scale=1.0, init_bias=0.0):
+
+def fc(input_shape,
+       scope,
+       nh,
+       *,
+       init_scale=1.0,
+       init_bias=0.0,
+       norm_apply=False,
+       norm_type='L2',
+       norm_coefficient=1.0e-4):
+
+    if norm_apply:
+        assert norm_type == 'L1' or norm_type == 'L2', 'Choose L1 or L2 norm.'
+        assert norm_coefficient > 0.0, 'Norm co-efficient must be greater than zero.'
+        kernel_regularizer = tf.keras.regularizers.l1(norm_coefficient) \
+            if norm_type == 'L1' else tf.keras.regularizers.l2(norm_coefficient)
+    else:
+        kernel_regularizer = None
+
     with tf.name_scope(scope):
         layer = tf.keras.layers.Dense(units=nh, kernel_initializer=ortho_init(init_scale),
-                                      bias_initializer=tf.keras.initializers.Constant(init_bias))
+                                      bias_initializer=tf.keras.initializers.Constant(init_bias),
+                                      kernel_regularizer=kernel_regularizer)
         layer.build(input_shape)
     return layer
 
