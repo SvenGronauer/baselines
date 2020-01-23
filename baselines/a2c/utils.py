@@ -45,13 +45,17 @@ def fc(input_shape,
         assert norm_coefficient > 0.0, 'Norm co-efficient must be greater than zero.'
         kernel_regularizer = tf.keras.regularizers.l1(norm_coefficient) \
             if norm_type == 'L1' else tf.keras.regularizers.l2(norm_coefficient)
+        bias_regularizer = tf.keras.regularizers.l1(norm_coefficient) \
+            if norm_type == 'L1' else tf.keras.regularizers.l2(norm_coefficient)
     else:
         kernel_regularizer = None
+        bias_regularizer = None
 
     with tf.name_scope(scope):
         layer = tf.keras.layers.Dense(units=nh, kernel_initializer=ortho_init(init_scale),
                                       bias_initializer=tf.keras.initializers.Constant(init_bias),
-                                      kernel_regularizer=kernel_regularizer)
+                                      kernel_regularizer=kernel_regularizer,
+                                      bias_regularizer=bias_regularizer)
         layer.build(input_shape)
     return layer
 
