@@ -36,15 +36,12 @@ class PolicyWithValue(tf.Module):
                                   ac_space,
                                   init_scale=0.01,
                                   **kwargs)
-        # self.pdtype = make_pdtype(policy_network.output_shape, ac_space, init_scale=0.01)
 
         if estimate_q:
             assert isinstance(ac_space, gym.spaces.Discrete)
             self.value_fc = fc(self.value_network.out_shape, 'q', ac_space.n)
-            # self.value_fc = fc(self.value_network.output_shape, 'q', ac_space.n)
         else:
             self.value_fc = fc(self.value_network.out_shape, 'vf', 1, **kwargs)
-            # self.value_fc = fc(self.value_network.output_shape, 'vf', 1)
 
     @tf.function
     def step(self, observation, training):
