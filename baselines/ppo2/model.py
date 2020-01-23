@@ -25,7 +25,7 @@ class Model(tf.Module):
                  *,
                  env,
                  policy_network,
-                 value_network=None,
+                 value_network,
                  ent_coef,
                  vf_coef,
                  max_grad_norm,

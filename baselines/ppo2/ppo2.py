@@ -37,7 +37,9 @@ def learn(*,
           save_interval=0,
           load_path=None,
           model_fn=None,
-          **network_kwargs):
+          value_network='copy',
+          network_kwargs,
+          **kwargs):
     '''
     Learn policy using PPO algorithm (https://arxiv.org/abs/1707.06347)
 
@@ -108,10 +110,11 @@ def learn(*,
     ob_space = env.observation_space
     ac_space = env.action_space
 
+    value_net = None if value_network == 'copy' else get_network_builder('mlp')(**network_kwargs)(ob_space.shape)
     if isinstance(network, str):
         network_type = network
-        policy_network_fn = get_network_builder(network_type)(**network_kwargs)
-        network = policy_network_fn(ob_space.shape)
+        network_fn = get_network_builder(network_type)(**network_kwargs)
+        network = network_fn(ob_space.shape)
 
     # Calculate the mini_batch_size
     nbatch = nenvs * nsteps
@@ -125,7 +128,7 @@ def learn(*,
 
     model = model_fn(env=env,
                      policy_network=network,
-                     value_network=None,  # if None, policy and value network share params
+                     value_network=value_net,  # if None, policy and value network share params
                      ent_coef=ent_coef,
                      vf_coef=vf_coef,
                      max_grad_norm=max_grad_norm,

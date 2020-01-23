@@ -55,20 +55,6 @@ def mlp(num_layers=2,
 
     function that builds fully connected network with a given input tensor / placeholder
     """
-    # def old_network_fn(input_shape):
-    #     print('input shape is {}'.format(input_shape))
-    #     x_input = tf.keras.Input(shape=input_shape)
-    #     # h = tf.keras.layers.Flatten(x_input)
-    #     h = x_input
-    #     for i in range(num_layers):
-    #       h = tf.keras.layers.Dense(units=num_hidden, kernel_initializer=ortho_init(np.sqrt(2)),
-    #                                 name='mlp_fc{}'.format(i), activation=activation)(h)
-    #
-    #     network = tf.keras.Model(inputs=[x_input], outputs=[h])
-    #     return network
-    #
-    # return old_network_fn
-
     def network_fn(input_shape):
 
         class MyModel(tf.keras.Model):
