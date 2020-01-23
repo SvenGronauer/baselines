@@ -84,17 +84,21 @@ def mlp(num_layers=2,
 
             def build_layers(self):
                 _layers = []
-                if self.norm_apply:
-                    assert norm_type == 'L1' or norm_type == 'L2', 'Choose L1 or L2 norm.'
-                    assert norm_coefficient > 0.0, 'Norm co-efficient must be greater than zero.'
-                    kernel_regularizer = tf.keras.regularizers.l1(norm_coefficient) \
-                        if norm_type == 'L1' else tf.keras.regularizers.l2(norm_coefficient)
-                else:
-                    kernel_regularizer = None
                 for i in range(self.num_layers):
+                    if self.norm_apply:
+                        assert norm_type == 'L1' or norm_type == 'L2', 'Choose L1 or L2 norm.'
+                        assert norm_coefficient > 0.0, 'Norm co-efficient must be greater than zero.'
+                        kernel_regularizer = tf.keras.regularizers.l1(norm_coefficient) \
+                            if norm_type == 'L1' else tf.keras.regularizers.l2(norm_coefficient)
+                        bias_regularizer = tf.keras.regularizers.l1(norm_coefficient) \
+                            if norm_type == 'L1' else tf.keras.regularizers.l2(norm_coefficient)
+                    else:
+                        kernel_regularizer = None
+                        bias_regularizer = None
                     d = tf.keras.layers.Dense(units=num_hidden,
                                               kernel_initializer=ortho_init(np.sqrt(2)),
                                               kernel_regularizer=kernel_regularizer,
+                                              bias_regularizer=bias_regularizer,
                                               name=f'mlp_fc{i}', activation=activation)
                     _layers.append(d)
                 return _layers
