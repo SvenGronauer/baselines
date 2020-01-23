@@ -125,9 +125,11 @@ def learn(*,
 
     model = model_fn(env=env,
                      policy_network=network,
+                     value_network=None,  # if None, policy and value network share params
                      ent_coef=ent_coef,
                      vf_coef=vf_coef,
-                     max_grad_norm=max_grad_norm)
+                     max_grad_norm=max_grad_norm,
+                     network_kwargs=network_kwargs)
 
     if load_path is not None:
         load_path = osp.expanduser(load_path)

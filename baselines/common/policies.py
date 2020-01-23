@@ -10,7 +10,7 @@ class PolicyWithValue(tf.Module):
     Encapsulates fields and methods for RL policy and value function estimation with shared parameters
     """
 
-    def __init__(self, ac_space, policy_network, value_network=None, estimate_q=False):
+    def __init__(self, ac_space, policy_network, value_network=None,  estimate_q=False, **kwargs):
         """
         Parameters:
         ----------
@@ -22,6 +22,8 @@ class PolicyWithValue(tf.Module):
 
         estimate_q      q value or v value
 
+        kwargs
+
         """
 
         self.policy_network = policy_network
@@ -30,16 +32,16 @@ class PolicyWithValue(tf.Module):
         self.initial_state = None
 
         # Based on the action space, will select what probability distribution type
-        self.pdtype = make_pdtype(policy_network.out_shape, ac_space, init_scale=0.01)
-        # self.pdtype = make_pdtype(policy_network.output_shape, ac_space, init_scale=0.01)
+        self.pdtype = make_pdtype(policy_network.out_shape,
+                                  ac_space,
+                                  init_scale=0.01,
+                                  **kwargs)
 
         if estimate_q:
             assert isinstance(ac_space, gym.spaces.Discrete)
             self.value_fc = fc(self.value_network.out_shape, 'q', ac_space.n)
-            # self.value_fc = fc(self.value_network.output_shape, 'q', ac_space.n)
         else:
-            self.value_fc = fc(self.value_network.out_shape, 'vf', 1)
-            # self.value_fc = fc(self.value_network.output_shape, 'vf', 1)
+            self.value_fc = fc(self.value_network.out_shape, 'vf', 1, **kwargs)
 
     @tf.function
     def step(self, observation, training):

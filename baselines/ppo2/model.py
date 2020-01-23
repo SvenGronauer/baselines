@@ -28,10 +28,17 @@ class Model(tf.Module):
                  value_network=None,
                  ent_coef,
                  vf_coef,
-                 max_grad_norm):
+                 max_grad_norm,
+                 network_kwargs):
         super(Model, self).__init__(name='PPO2Model')
         ac_space = env.action_space
-        self.train_model = PolicyWithValue(ac_space, policy_network, value_network, estimate_q=False)
+        self.train_model = PolicyWithValue(ac_space,
+                                           policy_network,
+                                           value_network,
+                                           estimate_q=False,
+                                           norm_apply=network_kwargs['norm_apply'],
+                                           norm_type=network_kwargs['norm_type'],
+                                           norm_coefficient=network_kwargs['norm_coefficient'])
         if MPI is not None:
           self.optimizer = MpiAdamOptimizer(MPI.COMM_WORLD, self.train_model.trainable_variables)
         else:

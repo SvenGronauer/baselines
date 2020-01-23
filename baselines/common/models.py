@@ -72,9 +72,10 @@ def mlp(num_layers=2,
     def network_fn(input_shape):
 
         class MyModel(tf.keras.Model):
-            def __init__(self):
+            def __init__(self, in_shape):
                 super(MyModel, self).__init__()
                 self.num_layers = num_layers
+                self.in_shape = in_shape
                 self.norm_apply = norm_apply
                 self._layers = self.build_layers()
                 self.dropout = tf.keras.layers.Dropout(dropout_rate) if dropout else None
@@ -113,10 +114,10 @@ def mlp(num_layers=2,
 
             def init_weights_biases(self):
                 """ perform forward-pass to init weights and biases"""
-                fake_pass_shape = (1,) + input_shape
+                fake_pass_shape = (1,) + self.in_shape
                 self.call(tf.ones(fake_pass_shape), training=False)
 
-        net = MyModel()
+        net = MyModel(input_shape)
         return net
     
     return network_fn

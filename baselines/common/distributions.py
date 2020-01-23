@@ -50,9 +50,9 @@ class PdType(tf.Module):
         return (type(self) == type(other)) and (self.__dict__ == other.__dict__)
 
 class CategoricalPdType(PdType):
-    def __init__(self, latent_shape, ncat, init_scale=1.0, init_bias=0.0):
+    def __init__(self, latent_shape, ncat, init_scale=1.0, init_bias=0.0, **kwargs):
         self.ncat = ncat
-        self.matching_fc = _matching_fc(latent_shape, 'pi', self.ncat, init_scale=init_scale, init_bias=init_bias)
+        self.matching_fc = _matching_fc(latent_shape, 'pi', self.ncat, init_scale=init_scale, init_bias=init_bias, **kwargs)
 
     def pdclass(self):
         return CategoricalPd
@@ -68,9 +68,14 @@ class CategoricalPdType(PdType):
         return tf.int32
 
 class DiagGaussianPdType(PdType):
-    def __init__(self, latent_shape, size, init_scale=1.0, init_bias=0.0):
+    def __init__(self, latent_shape, size, init_scale=1.0, init_bias=0.0, **kwargs):
         self.size = size
-        self.matching_fc = _matching_fc(latent_shape, 'pi', self.size, init_scale=init_scale, init_bias=init_bias)
+        self.matching_fc = _matching_fc(latent_shape,
+                                        'pi',
+                                        self.size,
+                                        init_scale=init_scale,
+                                        init_bias=init_bias,
+                                        **kwargs)
         self.logstd = tf.Variable(np.zeros((1, self.size)), name='pi/logstd', dtype=tf.float32)
 
     def pdclass(self):
@@ -169,18 +174,18 @@ class DiagGaussianPd(Pd):
     def fromflat(cls, flat):
         return cls(flat)
 
-def make_pdtype(latent_shape, ac_space, init_scale=1.0):
+def make_pdtype(latent_shape, ac_space, init_scale=1.0, **kwargs):
     from gym import spaces
     if isinstance(ac_space, spaces.Box):
         assert len(ac_space.shape) == 1
-        return DiagGaussianPdType(latent_shape, ac_space.shape[0], init_scale)
+        return DiagGaussianPdType(latent_shape, ac_space.shape[0], init_scale, **kwargs)
     elif isinstance(ac_space, spaces.Discrete):
-        return CategoricalPdType(latent_shape, ac_space.n, init_scale)
+        return CategoricalPdType(latent_shape, ac_space.n, init_scale, **kwargs)
     else:
         raise ValueError('No implementation for {}'.format(ac_space))
 
-def _matching_fc(tensor_shape, name, size, init_scale, init_bias):
+def _matching_fc(tensor_shape, name, size, init_scale, init_bias, **kwargs):
     if tensor_shape[-1] == size:
         return lambda x: x
     else:
-        return fc(tensor_shape, name, size, init_scale=init_scale, init_bias=init_bias)
+        return fc(tensor_shape, name, size, init_scale=init_scale, init_bias=init_bias, **kwargs)
