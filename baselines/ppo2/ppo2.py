@@ -205,7 +205,7 @@ def learn(*,
             ev = explained_variance(values, returns)
             logger.logkv("misc/serial_timesteps", update*nsteps)
             logger.logkv("misc/nupdates", update)
-            logger.logkv("misc/total_timesteps", update*nbatch)
+            logger.logkv("misc/total_env_steps", update*nbatch)
             logger.logkv("misc/fps", fps)
             logger.logkv("misc/mini_batch_size", mini_batch_size)
             logger.logkv("misc/explained_variance", float(ev))

@@ -1,12 +1,8 @@
 import tensorflow as tf
 from baselines.common.policies import PolicyWithValue
 
-try:
-    from baselines.common.mpi_adam_optimizer import MpiAdamOptimizer
-    from mpi4py import MPI
-    from baselines.common.mpi_util import sync_from_root
-except ImportError:
-    MPI = None
+MPI = None
+
 
 class Model(tf.Module):
     """
@@ -39,10 +35,10 @@ class Model(tf.Module):
                                            norm_apply=network_kwargs['norm_apply'],
                                            norm_type=network_kwargs['norm_type'],
                                            norm_coefficient=network_kwargs['norm_coefficient'])
-        if MPI is not None:
-          self.optimizer = MpiAdamOptimizer(MPI.COMM_WORLD, self.train_model.trainable_variables)
-        else:
-          self.optimizer = tf.keras.optimizers.Adam()
+        # if MPI is not None:
+        #   self.optimizer = MpiAdamOptimizer(MPI.COMM_WORLD, self.train_model.trainable_variables)
+        # else:
+        self.optimizer = tf.keras.optimizers.Adam()
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
@@ -50,20 +46,20 @@ class Model(tf.Module):
         self.value = self.train_model.value
         self.initial_state = self.train_model.initial_state
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac']
-        if MPI is not None:
-          sync_from_root(self.variables)
+        # if MPI is not None:
+        #   sync_from_root(self.variables)
 
         self.set_env_params(*env.ob_rms.get_values())
 
     def train(self, lr, cliprange, obs, returns, masks, actions, values, neglogpac_old, states=None):
         grads, pg_loss, vf_loss, entropy, approxkl, clipfrac = self.get_grad(
             cliprange, obs, returns, masks, actions, values, neglogpac_old)
-        if MPI is not None:
-            self.optimizer.apply_gradients(grads, lr)
-        else:
-            self.optimizer.learning_rate = lr
-            grads_and_vars = zip(grads, self.train_model.trainable_variables)
-            self.optimizer.apply_gradients(grads_and_vars)
+        # if MPI is not None:
+        #     self.optimizer.apply_gradients(grads, lr)
+        # else:
+        self.optimizer.learning_rate = lr
+        grads_and_vars = zip(grads, self.train_model.trainable_variables)
+        self.optimizer.apply_gradients(grads_and_vars)
 
         return pg_loss, vf_loss, entropy, approxkl, clipfrac
 
@@ -100,8 +96,8 @@ class Model(tf.Module):
         grads = tape.gradient(loss, var_list)
         if self.max_grad_norm is not None:
             grads, _ = tf.clip_by_global_norm(grads, self.max_grad_norm)
-        if MPI is not None:
-            grads = tf.concat([tf.reshape(g, (-1,)) for g in grads], axis=0)
+        # if MPI is not None:
+        #     grads = tf.concat([tf.reshape(g, (-1,)) for g in grads], axis=0)
         return grads, pg_loss, vf_loss, entropy, approxkl, clipfrac
 
     def get_env_params(self):
