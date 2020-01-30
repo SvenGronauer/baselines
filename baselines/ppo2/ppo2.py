@@ -224,7 +224,7 @@ def learn(*,
 
             logger.dumpkvs()
 
-    return model
+    return model, eval_runner
 
 # Avoid division error when calculate the mean (in our case if epinfo is empty returns np.nan, not return an error)
 def safemean(xs):
