@@ -96,7 +96,6 @@ def learn(*,
     '''
 
     # set_global_seeds(seed)
-
     if isinstance(lr, float): lr = constfn(lr)
     else: assert callable(lr)
     if isinstance(cliprange, float): cliprange = constfn(cliprange)

@@ -1,5 +1,5 @@
 from baselines.common import explained_variance, zipsame, dataset
-from baselines import logger
+from research.common import loggers
 import baselines.common.tf_util as U
 import tensorflow as tf, numpy as np
 import time
@@ -14,12 +14,15 @@ from baselines.common.policies import PolicyWithValue
 from baselines.common.vec_env.vec_env import VecEnv
 from contextlib import contextmanager
 
-try:
-    from mpi4py import MPI
-except ImportError:
-    MPI = None
+# try:
+#     from mpi4py import MPI
+# except ImportError:
+#     MPI = None
 
-def traj_segment_generator(pi, env, horizon):
+MPI = None  # disable MPI by default -> use multi-processes in parallel instead
+
+
+def traj_segment_generator(pi, env, horizon, training):
     # Initialize state variables
     t = 0
     ac = env.action_space.sample()
@@ -45,7 +48,7 @@ def traj_segment_generator(pi, env, horizon):
     while True:
         prevac = ac
         ob = tf.constant(ob)
-        ac, vpred, _, _ = pi.step(ob)
+        ac, vpred, _, _ = pi.step(ob, training=training)
         ac = ac.numpy()
         # Slight weirdness here because we need value function at time T
         # before returning segment [0, T-1] so we get the correct
@@ -54,7 +57,7 @@ def traj_segment_generator(pi, env, horizon):
             yield {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news,
                     "ac" : acs, "prevac" : prevacs, "nextvpred": vpred * (1 - new),
                     "ep_rets" : ep_rets, "ep_lens" : ep_lens}
-            _, vpred, _, _ = pi.step(ob)
+            _, vpred, _, _ = pi.step(ob, training=training)
             # Be careful!!! if you change the downstream algorithm to aggregate
             # several of these batches, then be sure to do a deepcopy
             ep_rets = []
@@ -67,6 +70,10 @@ def traj_segment_generator(pi, env, horizon):
         prevacs[i] = prevac
 
         ob, rew, new, _ = env.step(ac)
+        # print('Trajectory Rew:', rew)
+        # time.sleep(1)
+        # if new[0]:
+        #     print(i, rew)
         if not isinstance(env, VecEnv):
           ob = np.expand_dims(ob, axis=0)
         rews[i] = rew
@@ -74,8 +81,11 @@ def traj_segment_generator(pi, env, horizon):
         cur_ep_ret += rew
         cur_ep_len += 1
         if new:
+            # print('i:', i)
             ep_rets.append(cur_ep_ret)
             ep_lens.append(cur_ep_len)
+            # print('cur_ep_ret:', cur_ep_ret)
+            # print('cur_ep_len:', cur_ep_len)
             cur_ep_ret = 0
             cur_ep_len = 0
             ob = env.reset()
@@ -99,12 +109,14 @@ def add_vtarg_and_adv(seg, gamma, lam):
 def learn(*,
         network,
         env,
+        eval_env=None,
         total_timesteps,
-        timesteps_per_batch=1024, # what to train on
-        max_kl=0.001,
-        cg_iters=10,
-        gamma=0.99,
-        lam=1.0, # advantage estimation
+        logger_kwargs,
+        nbatch,  # what to train on
+        max_kl,
+        cg_iters,
+        gamma,
+        lam,  # advantage estimation
         seed=None,
         ent_coef=0.0,
         cg_damping=1e-2,
@@ -127,7 +139,7 @@ def learn(*,
 
     env                     environment (one of the gym environments or wrapped via baselines.common.vec_env.VecEnv-type class
 
-    timesteps_per_batch     timesteps per gradient estimation batch
+    nbatch                  timesteps per gradient estimation batch
 
     max_kl                  max KL divergence between old policy and new policy ( KL(pi_old || pi) )
 
@@ -159,6 +171,12 @@ def learn(*,
     learnt model
 
     '''
+
+    # Set up logger and save configuration
+    params = locals()  # get before logger instance to avoid unnecessary prints
+    logger = loggers.EpochLogger(**logger_kwargs)
+    params.pop('env')  # make config.json more readable
+    logger.save_config(params)
 
     if MPI is not None:
         nworkers = MPI.COMM_WORLD.Get_size()
@@ -202,7 +220,7 @@ def learn(*,
 
     get_flat = U.GetFlat(pi_var_list)
     set_from_flat = U.SetFromFlat(pi_var_list)
-    loss_names = ["optimgain", "meankl", "entloss", "surrgain", "entropy"]
+    loss_names = ["OptimGain", "KL", "EntLoss", "SurrGain", "Entropy"]
     shapes = [var.get_shape().as_list() for var in pi_var_list]
 
 
@@ -213,11 +231,11 @@ def learn(*,
             old_vf_var.assign(vf_var)
 
     @tf.function
-    def compute_lossandgrad(ob, ac, atarg):
+    def compute_lossandgrad(ob, ac, atarg, training):
         with tf.GradientTape() as tape:
-            old_policy_latent = oldpi.policy_network(ob)
+            old_policy_latent = oldpi.policy_network(ob, training=training)
             old_pd, _ = oldpi.pdtype.pdfromlatent(old_policy_latent)
-            policy_latent = pi.policy_network(ob)
+            policy_latent = pi.policy_network(ob, training=training)
             pd, _ = pi.pdtype.pdfromlatent(policy_latent)
             kloldnew = old_pd.kl(pd)
             ent = pd.entropy()
@@ -232,10 +250,10 @@ def learn(*,
         return losses + [U.flatgrad(gradients, pi_var_list)]
 
     @tf.function
-    def compute_losses(ob, ac, atarg):
-        old_policy_latent = oldpi.policy_network(ob)
+    def compute_losses(ob, ac, atarg, training=True):
+        old_policy_latent = oldpi.policy_network(ob, training=training)
         old_pd, _ = oldpi.pdtype.pdfromlatent(old_policy_latent)
-        policy_latent = pi.policy_network(ob)
+        policy_latent = pi.policy_network(ob, training=training)
         pd, _ = pi.pdtype.pdfromlatent(policy_latent)
         kloldnew = old_pd.kl(pd)
         ent = pd.entropy()
@@ -251,19 +269,19 @@ def learn(*,
     #ob shape should be [batch_size, ob_dim], merged nenv
     #ret shape should be [batch_size]
     @tf.function
-    def compute_vflossandgrad(ob, ret):
+    def compute_vflossandgrad(ob, ret, training=True):
         with tf.GradientTape() as tape:
-            pi_vf = pi.value(ob)
+            pi_vf = pi.value(ob, training=training)
             vferr = tf.reduce_mean(tf.square(pi_vf - ret))
         return U.flatgrad(tape.gradient(vferr, vf_var_list), vf_var_list)
 
     @tf.function
-    def compute_fvp(flat_tangent, ob, ac, atarg):
+    def compute_fvp(flat_tangent, ob, ac, atarg, training=True):
         with tf.GradientTape() as outter_tape:
             with tf.GradientTape() as inner_tape:
-                old_policy_latent = oldpi.policy_network(ob)
+                old_policy_latent = oldpi.policy_network(ob, training=training)
                 old_pd, _ = oldpi.pdtype.pdfromlatent(old_policy_latent)
-                policy_latent = pi.policy_network(ob)
+                policy_latent = pi.policy_network(ob, training=training)
                 pd, _ = pi.pdtype.pdfromlatent(policy_latent)
                 kloldnew = old_pd.kl(pd)
                 meankl = tf.reduce_mean(kloldnew)
@@ -310,7 +328,7 @@ def learn(*,
 
     # Prepare for rollouts
     # ----------------------------------------
-    seg_gen = traj_segment_generator(pi, env, timesteps_per_batch)
+    seg_gen = traj_segment_generator(pi, env, nbatch, training=True)
 
     episodes_so_far = 0
     timesteps_so_far = 0
@@ -356,7 +374,7 @@ def learn(*,
 
         assign_old_eq_new() # set old parameter values to new parameter values
         with timed("computegrad"):
-            *lossbefore, g = compute_lossandgrad(*args)
+            *lossbefore, g = compute_lossandgrad(*args, training=True)
         lossbefore = allmean(np.array(lossbefore))
         g = g.numpy()
         g = allmean(g)
@@ -374,7 +392,7 @@ def learn(*,
             surrbefore = lossbefore[0]
             stepsize = 1.0
             thbefore = get_flat()
-            for _ in range(10):
+            for k in range(10):
                 thnew = thbefore + fullstep * stepsize
                 set_from_flat(thnew)
                 meanlosses = surr, kl, *_ = allmean(np.array(compute_losses(*args)))
@@ -393,12 +411,18 @@ def learn(*,
             else:
                 logger.log("couldn't compute a good step")
                 set_from_flat(thbefore)
+            logger.store(AcceptanceStep=k)
+
             if nworkers > 1 and iters_so_far % 20 == 0:
                 paramsums = MPI.COMM_WORLD.allgather((thnew.sum(), vfadam.getflat().sum())) # list of tuples
                 assert all(np.allclose(ps, paramsums[0]) for ps in paramsums[1:])
 
-        for (lossname, lossval) in zip(loss_names, meanlosses):
-            logger.record_tabular(lossname, lossval)
+        # for (lossname, lossval) in zip(loss_names, meanlosses):
+        #     print(f'lossname: {lossname} lossval: {lossval}')
+        #     # todo
+        #     logger.store(lossname=lossval)
+        #     # logger.record_tabular(lossname, lossval)
+        logger.store(**dict(zip(loss_names, meanlosses)))
 
         with timed("vf"):
 
@@ -409,7 +433,10 @@ def learn(*,
                     g = allmean(compute_vflossandgrad(mbob, mbret).numpy())
                     vfadam.update(g, vf_stepsize)
 
-        logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
+        # logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
+        print('ev_tdlam_before')
+        # todo
+        print(explained_variance(vpredbefore, tdlamret))
 
         lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
         if MPI is not None:
@@ -421,19 +448,38 @@ def learn(*,
         lenbuffer.extend(lens)
         rewbuffer.extend(rews)
 
-        logger.record_tabular("EpLenMean", np.mean(lenbuffer))
-        logger.record_tabular("EpRewMean", np.mean(rewbuffer))
-        logger.record_tabular("EpThisIter", len(lens))
+        logger.store(
+            EpLen=lenbuffer,
+            EpRet=rewbuffer,
+            EpThisIter=len(lens)
+        )
+
+        # logger.record_tabular("EpLenMean", np.mean(lenbuffer))
+        # logger.record_tabular("EpRewMean", np.mean(rewbuffer))
+        # logger.record_tabular("EpThisIter", len(lens))
         episodes_so_far += len(lens)
         timesteps_so_far += sum(lens)
         iters_so_far += 1
 
-        logger.record_tabular("EpisodesSoFar", episodes_so_far)
-        logger.record_tabular("TimestepsSoFar", timesteps_so_far)
-        logger.record_tabular("TimeElapsed", time.time() - tstart)
+        # logger.record_tabular("EpisodesSoFar", episodes_so_far)
+        # logger.record_tabular("TimestepsSoFar", timesteps_so_far)
+        # logger.record_tabular("TimeElapsed", time.time() - tstart)
 
-        if rank==0:
+        if rank == 0:
+            logger.log_tabular('Epoch', iters_so_far)
+            logger.log_tabular('EpRet', min_and_max=True, std=True)
+            logger.log_tabular('EpLen', min_and_max=True)
+            logger.log_tabular('OptimGain')
+            logger.log_tabular('KL')
+            logger.log_tabular('EntLoss')
+            logger.log_tabular('SurrGain')
+            logger.log_tabular('Entropy')
+            logger.log_tabular('AcceptanceStep')
+            logger.log_tabular('Time', time.time() - tstart)
+            logger.log_tabular('TotalEnvSteps', timesteps_so_far)
+            logger.log_tabular('FPS', timesteps_so_far / (time.time() - tstart))
             logger.dump_tabular()
+            print('DUMP!')
 
     return pi
 
