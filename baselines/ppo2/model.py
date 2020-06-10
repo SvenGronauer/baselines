@@ -45,7 +45,7 @@ class Model(tf.Module):
         self.step = self.train_model.step
         self.value = self.train_model.value
         self.initial_state = self.train_model.initial_state
-        self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac']
+        self.loss_names = ['Loss/Pi', 'Loss/Value', 'Entropy', 'ApproxKL', 'ClipFrac']
         # if MPI is not None:
         #   sync_from_root(self.variables)
 

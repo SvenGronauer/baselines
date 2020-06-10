@@ -2,26 +2,32 @@ import time
 import numpy as np
 import tensorflow as tf
 import os.path as osp
-from baselines import logger
 from collections import deque
 from baselines.common import explained_variance, set_global_seeds
 from baselines.common.models import get_network_builder
-try:
-    from mpi4py import MPI
-except ImportError:
-    MPI = None
 from baselines.ppo2.runner import Runner
+from research.common import loggers
+
+# try:
+#     from mpi4py import MPI
+# except ImportError:
+#     MPI = None
+
+MPI = None
+
 
 def constfn(val):
     def f(_):
         return val
     return f
 
+
 def learn(*,
           network,
           env,
           total_timesteps,
-          eval_env=None,
+          eval_env,
+          logger_kwargs,
           seed=None,
           nsteps=2048,
           ent_coef=0.0,
@@ -40,7 +46,7 @@ def learn(*,
           value_network='copy',
           network_kwargs,
           **kwargs):
-    '''
+    """
     Learn policy using PPO algorithm (https://arxiv.org/abs/1707.06347)
 
     Parameters:
@@ -93,7 +99,13 @@ def learn(*,
 
 
 
-    '''
+    """
+
+    # Set up logger and save configuration
+    params = locals()  # get before logger instance to avoid unnecessary prints
+    logger = loggers.EpochLogger(**logger_kwargs)
+    params.pop('env')  # make config.json more readable
+    logger.save_config(params)
 
     # set_global_seeds(seed)
     if isinstance(lr, float): lr = constfn(lr)
@@ -144,9 +156,9 @@ def learn(*,
     if eval_env is not None:
         eval_runner = Runner(env = eval_env, model = model, nsteps = nsteps, gamma = gamma, lam= lam)
 
-    epinfobuf = deque(maxlen=100)  # this smooths over the last "maxlen" elements
+    epinfobuf = deque(maxlen=40)  # this smooths over the last "maxlen" elements
     if eval_env is not None:
-        eval_epinfobuf = deque(maxlen=100)
+        eval_epinfobuf = deque(maxlen=40)
 
     # Start total timer
     tfirststart = time.perf_counter()
@@ -162,7 +174,7 @@ def learn(*,
         cliprangenow = cliprange(frac)
 
         if update % log_interval == 0 and is_mpi_root:
-            logger.info('Update {}/{}: Stepping environment...'.format(update, nupdates))
+            logger.log('Update {}/{}: Stepping environment...'.format(update, nupdates))
 
         # Get minibatch
         obs, returns, masks, actions, values, neglogpacs, states, epinfo = runner.run(training=True)
@@ -173,6 +185,11 @@ def learn(*,
         epinfobuf.extend(epinfo)
         if eval_env is not None:
             eval_epinfobuf.extend(eval_epinfos)
+
+        logger.store(
+            EpLen=[ep_info['l'] for ep_info in epinfobuf],
+            EpRet=[ep_info['r'] for ep_info in epinfobuf]
+        )
 
         # Here what we're going to do is for each minibatch calculate the loss and append it.
         mblossvals = []
@@ -194,34 +211,62 @@ def learn(*,
 
         # Feedforward --> get losses --> update
         lossvals = np.mean(mblossvals, axis=0)
+
+        # log the mean of all losses
+        logger.store(**dict(zip(model.loss_names, lossvals)))
+
         # End timer
         tnow = time.perf_counter()
         # Calculate the fps (frame per second)
         fps = int(nbatch / (tnow - tstart))
-        if update % log_interval == 0 or update == 1:
-            # Calculates if value function is a good predicator of the returns (ev > 1)
-            # or if it's just worse than predicting nothing (ev =< 0)
-            ev = explained_variance(values, returns)
-            logger.logkv("misc/serial_timesteps", update*nsteps)
-            logger.logkv("misc/nupdates", update)
-            logger.logkv("misc/total_env_steps", update*nbatch)
-            logger.logkv("misc/fps", fps)
-            logger.logkv("misc/mini_batch_size", mini_batch_size)
-            logger.logkv("misc/explained_variance", float(ev))
-            # this smooths over the last 100 elements
-            logger.logkv('train/episode/reward_mean', safemean([epinfo['r'] for epinfo in epinfobuf]))
-            logger.logkv('train/episode/reward_std', safestd([epinfo['r'] for epinfo in epinfobuf]))
-            logger.logkv('train/episode/ep_length_mean', safemean([epinfo['l'] for epinfo in epinfobuf]))
-            if eval_env is not None:
-                eval_rewards = [epinfo['r'] for epinfo in eval_epinfobuf]
-                logger.logkv('eval/episode/reward_mean', safemean(eval_rewards))
-                logger.logkv('eval/episode/reward_std', safestd(eval_rewards))
-                logger.logkv('eval/episode/ep_length_mean', safemean([epinfo['l'] for epinfo in eval_epinfobuf]) )
-            logger.logkv('misc/time_elapsed', tnow - tfirststart)
-            for (lossval, lossname) in zip(lossvals, model.loss_names):
-                logger.logkv('loss/' + lossname, float(lossval))
+        ev = explained_variance(values, returns)
 
-            logger.dumpkvs()
+        logger.log_tabular('Epoch', update)
+        logger.log_tabular('EpRet', min_and_max=True, std=True)
+        logger.log_tabular('EpLen', min_and_max=True)
+        if eval_env is not None:
+            eval_returns = [epinfo['r'] for epinfo in eval_epinfobuf]
+            logger.store(
+                EvalEpLen=[epinfo['l'] for epinfo in eval_epinfobuf],
+                EvalEpRet=[epinfo['r'] for epinfo in eval_epinfobuf]
+            )
+            logger.log_tabular('EvalEpRet', min_and_max=True, std=True)
+            logger.log_tabular('EvalEpLen', min_and_max=True)
+        logger.log_tabular('Loss/Pi')
+        logger.log_tabular('Loss/Value')
+        logger.log_tabular('Entropy')
+        logger.log_tabular('ApproxKL')
+        logger.log_tabular('ClipFrac')
+        logger.log_tabular('ExplainedVariance', float(ev))
+        logger.log_tabular('Time', tnow - tfirststart)
+        logger.log_tabular('TotalEnvSteps', update*nbatch)
+        logger.log_tabular('FPS', fps)
+        logger.dump_tabular()
+
+        # if update % log_interval == 0 or update == 1:
+        #     # Calculates if value function is a good predicator of the returns (ev > 1)
+        #     # or if it's just worse than predicting nothing (ev =< 0)
+        #     # ev = explained_variance(values, returns)
+        #     # logger.logkv("misc/serial_timesteps", update*nsteps)
+        #     # logger.logkv("misc/nupdates", update)
+        #     # logger.logkv("misc/total_env_steps", update*nbatch)
+        #     # logger.logkv("misc/fps", fps)
+        #     # logger.logkv("misc/mini_batch_size", mini_batch_size)
+        #     # logger.logkv("misc/explained_variance", float(ev))
+        #     # this smooths over the last 100 elements
+        #     logger.logkv('train/episode/reward_mean', safemean([epinfo['r'] for epinfo in epinfobuf]))
+        #     logger.logkv('train/episode/reward_std', safestd([epinfo['r'] for epinfo in epinfobuf]))
+        #     logger.logkv('train/episode/ep_length_mean', safemean([epinfo['l'] for epinfo in epinfobuf]))
+        #     if eval_env is not None:
+        #         eval_rewards = [epinfo['r'] for epinfo in eval_epinfobuf]
+        #         logger.logkv('eval/episode/reward_mean', safemean(eval_rewards))
+        #         logger.logkv('eval/episode/reward_std', safestd(eval_rewards))
+        #         logger.logkv('eval/episode/ep_length_mean', safemean([epinfo['l'] for epinfo in eval_epinfobuf]) )
+        #     logger.logkv('misc/time_elapsed', tnow - tfirststart)
+        #     for (lossval, lossname) in zip(lossvals, model.loss_names):
+        #         logger.logkv('loss/' + lossname, float(lossval))
+        #
+        #     logger.dumpkvs()
 
     return model
 

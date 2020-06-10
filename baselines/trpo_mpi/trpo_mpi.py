@@ -109,7 +109,7 @@ def add_vtarg_and_adv(seg, gamma, lam):
 def learn(*,
         network,
         env,
-        eval_env=None,
+        eval_env,
         total_timesteps,
         logger_kwargs,
         nbatch,  # what to train on
@@ -417,11 +417,7 @@ def learn(*,
                 paramsums = MPI.COMM_WORLD.allgather((thnew.sum(), vfadam.getflat().sum())) # list of tuples
                 assert all(np.allclose(ps, paramsums[0]) for ps in paramsums[1:])
 
-        # for (lossname, lossval) in zip(loss_names, meanlosses):
-        #     print(f'lossname: {lossname} lossval: {lossval}')
-        #     # todo
-        #     logger.store(lossname=lossval)
-        #     # logger.record_tabular(lossname, lossval)
+        # log the mean of all losses
         logger.store(**dict(zip(loss_names, meanlosses)))
 
         with timed("vf"):
@@ -432,12 +428,8 @@ def learn(*,
                     mbob = sf01(mbob)
                     g = allmean(compute_vflossandgrad(mbob, mbret).numpy())
                     vfadam.update(g, vf_stepsize)
-
-        # logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
-        print('ev_tdlam_before')
-        # todo
-        print(explained_variance(vpredbefore, tdlamret))
-
+        logger.log_tabular('ExplainedVariance', explained_variance(vpredbefore,
+                                                                   tdlamret))
         lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
         if MPI is not None:
             listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
@@ -453,17 +445,9 @@ def learn(*,
             EpRet=rewbuffer,
             EpThisIter=len(lens)
         )
-
-        # logger.record_tabular("EpLenMean", np.mean(lenbuffer))
-        # logger.record_tabular("EpRewMean", np.mean(rewbuffer))
-        # logger.record_tabular("EpThisIter", len(lens))
         episodes_so_far += len(lens)
         timesteps_so_far += sum(lens)
         iters_so_far += 1
-
-        # logger.record_tabular("EpisodesSoFar", episodes_so_far)
-        # logger.record_tabular("TimestepsSoFar", timesteps_so_far)
-        # logger.record_tabular("TimeElapsed", time.time() - tstart)
 
         if rank == 0:
             logger.log_tabular('Epoch', iters_so_far)
@@ -479,12 +463,13 @@ def learn(*,
             logger.log_tabular('TotalEnvSteps', timesteps_so_far)
             logger.log_tabular('FPS', timesteps_so_far / (time.time() - tstart))
             logger.dump_tabular()
-            print('DUMP!')
 
     return pi
 
+
 def flatten_lists(listoflists):
     return [el for list_ in listoflists for el in list_]
+
 
 def sf01(arr):
     """
