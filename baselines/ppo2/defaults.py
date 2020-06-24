@@ -29,14 +29,13 @@ def retro():
 
 def gym_locomotion_envs():
     return dict(
-        total_timesteps=int(10e6),  #todo back to 10e6
+        total_timesteps=int(10e6),
         nsteps=2000*16,
         nminibatches=16,
         lam=0.95,
         gamma=0.99,
         noptepochs=20,  # policy_iters = noptepochs * nminibatches
         num_env=1,
-        # num_timesteps=str(int(10e6)),  # default is 10e6
         log_interval=1,
         ent_coef=0.0,
         reward_scale=1.0,

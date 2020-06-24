@@ -1,7 +1,8 @@
 from baselines.common import explained_variance, zipsame, dataset
 from research.common import loggers
 import baselines.common.tf_util as U
-import tensorflow as tf, numpy as np
+import tensorflow as tf
+import numpy as np
 import time
 import os.path as osp
 from baselines.common import colorize
@@ -171,6 +172,7 @@ def learn(*,
     learnt model
 
     '''
+    verbose = logger_kwargs['verbose']
 
     # Set up logger and save configuration
     params = locals()  # get before logger instance to avoid unnecessary prints
@@ -220,7 +222,7 @@ def learn(*,
 
     get_flat = U.GetFlat(pi_var_list)
     set_from_flat = U.SetFromFlat(pi_var_list)
-    loss_names = ["OptimGain", "KL", "EntLoss", "SurrGain", "Entropy"]
+    loss_names = ["OptimGain", "KL", "EntLoss", "LossPi", "Entropy"]
     shapes = [var.get_shape().as_list() for var in pi_var_list]
 
 
@@ -298,12 +300,12 @@ def learn(*,
         return fvp
 
     @contextmanager
-    def timed(msg):
+    def timed(msg, verbose):
         if rank == 0:
-            print(colorize(msg, color='magenta'))
+            print(colorize(msg, color='magenta')) if verbose else None
             tstart = time.time()
             yield
-            print(colorize("done in %.3f seconds"%(time.time() - tstart), color='magenta'))
+            print(colorize("done in %.3f seconds"%(time.time() - tstart), color='magenta')) if verbose else None
         else:
             yield
 
@@ -324,7 +326,7 @@ def learn(*,
 
     set_from_flat(th_init)
     vfadam.sync()
-    print("Init param sum", th_init.sum(), flush=True)
+    # print("Init param sum", th_init.sum(), flush=True)
 
     # Prepare for rollouts
     # ----------------------------------------
@@ -352,9 +354,9 @@ def learn(*,
             break
         elif max_iters and iters_so_far >= max_iters:
             break
-        logger.log("********** Iteration %i ************"%iters_so_far)
+        logger.log("********** Iteration %i ************"%iters_so_far) if verbose else None
 
-        with timed("sampling"):
+        with timed("sampling", verbose):
             seg = seg_gen.__next__()
         add_vtarg_and_adv(seg, gamma, lam)
 
@@ -370,24 +372,35 @@ def learn(*,
         args = ob, ac, atarg
         fvpargs = [arr[::5] for arr in args]
         def fisher_vector_product(p):
-            return allmean(compute_fvp(p, *fvpargs).numpy()) + cg_damping * p
+            fvp = allmean(compute_fvp(p, *fvpargs).numpy()) + cg_damping * p
+            # print('Norm Fvp:', np.linalg.norm(fvp))
+            return fvp
 
         assign_old_eq_new() # set old parameter values to new parameter values
-        with timed("computegrad"):
+        with timed("computegrad", verbose):
             *lossbefore, g = compute_lossandgrad(*args, training=True)
         lossbefore = allmean(np.array(lossbefore))
         g = g.numpy()
         g = allmean(g)
         if np.allclose(g, 0):
-            logger.log("Got zero gradient. not updating")
+            logger.log("Got zero gradient. not updating") if verbose else None
         else:
-            with timed("cg"):
-                stepdir = cg(fisher_vector_product, g, cg_iters=cg_iters, verbose=rank==0)
+            with timed("cg", verbose):
+                stepdir = cg(fisher_vector_product, g, cg_iters=cg_iters,
+                             verbose=False)
             assert np.isfinite(stepdir).all()
-            shs = .5*stepdir.dot(fisher_vector_product(stepdir))
-            lm = np.sqrt(shs / max_kl)
+            # print('Norm stepdir:', np.linalg.norm(stepdir))
+            # logger.log_tabular('TRPO/StepDirection', np.linalg.norm(stepdir))
+            # logger.log_tabular('FullStepNorm', np.linalg.norm(stepdir))
+            shs = stepdir.dot(fisher_vector_product(stepdir))
+            # logger.log_tabular('TRPO/xHx', shs)
+            lm = np.sqrt(shs / 2 * max_kl)
             # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
             fullstep = stepdir / lm
+            # print('Norm Fullstep:', )
+            logger.store(FullStepNorm=np.linalg.norm(fullstep),
+                         xHx=shs,
+                         cg_x=np.linalg.norm(stepdir))
             expectedimprove = g.dot(fullstep)
             surrbefore = lossbefore[0]
             stepsize = 1.0
@@ -397,19 +410,21 @@ def learn(*,
                 set_from_flat(thnew)
                 meanlosses = surr, kl, *_ = allmean(np.array(compute_losses(*args)))
                 improve = surr - surrbefore
-                logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
+                logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve)) if verbose else None
                 if not np.isfinite(meanlosses).all():
-                    logger.log("Got non-finite value of losses -- bad!")
+                    logger.log("Got non-finite value of losses -- bad!") if verbose else None
                 elif kl > max_kl * 1.5:
-                    logger.log("violated KL constraint. shrinking step.")
+                    pass
+                    # logger.log("violated KL constraint. shrinking step.")
                 elif improve < 0:
-                    logger.log("surrogate didn't improve. shrinking step.")
+                    pass
+                    # logger.log("surrogate didn't improve. shrinking step.")
                 else:
-                    logger.log("Stepsize OK!")
+                    # logger.log("Stepsize OK!")
                     break
                 stepsize *= .5
             else:
-                logger.log("couldn't compute a good step")
+                logger.log("Couldn't compute a good step") if verbose else None
                 set_from_flat(thbefore)
             logger.store(AcceptanceStep=k)
 
@@ -420,7 +435,7 @@ def learn(*,
         # log the mean of all losses
         logger.store(**dict(zip(loss_names, meanlosses)))
 
-        with timed("vf"):
+        with timed("vf", verbose):
 
             for _ in range(vf_iters):
                 for (mbob, mbret) in dataset.iterbatches((seg["ob"], seg["tdlamret"]),
@@ -453,10 +468,13 @@ def learn(*,
             logger.log_tabular('Epoch', iters_so_far)
             logger.log_tabular('EpRet', min_and_max=True, std=True)
             logger.log_tabular('EpLen', min_and_max=True)
+            logger.log_tabular('FullStepNorm')
+            logger.log_tabular('xHx')
+            logger.log_tabular('cg_x')
             logger.log_tabular('OptimGain')
             logger.log_tabular('KL')
             logger.log_tabular('EntLoss')
-            logger.log_tabular('SurrGain')
+            logger.log_tabular('LossPi')
             logger.log_tabular('Entropy')
             logger.log_tabular('AcceptanceStep')
             logger.log_tabular('Time', time.time() - tstart)
