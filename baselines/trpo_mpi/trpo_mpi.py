@@ -400,6 +400,7 @@ def learn(*,
             # print('Norm Fullstep:', )
             logger.store(FullStepNorm=np.linalg.norm(fullstep),
                          xHx=shs,
+                         gradient_norm=np.linalg.norm(g),
                          cg_x=np.linalg.norm(stepdir))
             expectedimprove = g.dot(fullstep)
             surrbefore = lossbefore[0]
@@ -443,8 +444,7 @@ def learn(*,
                     mbob = sf01(mbob)
                     g = allmean(compute_vflossandgrad(mbob, mbret).numpy())
                     vfadam.update(g, vf_stepsize)
-        logger.log_tabular('ExplainedVariance', explained_variance(vpredbefore,
-                                                                   tdlamret))
+        explaned_var = explained_variance(vpredbefore, tdlamret)
         lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
         if MPI is not None:
             listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
@@ -468,7 +468,9 @@ def learn(*,
             logger.log_tabular('Epoch', iters_so_far)
             logger.log_tabular('EpRet', min_and_max=True, std=True)
             logger.log_tabular('EpLen', min_and_max=True)
+            logger.log_tabular('ExplainedVariance', explaned_var)
             logger.log_tabular('FullStepNorm')
+            logger.log_tabular('gradient_norm')
             logger.log_tabular('xHx')
             logger.log_tabular('cg_x')
             logger.log_tabular('OptimGain')
