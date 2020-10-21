@@ -392,9 +392,9 @@ def learn(*,
             # print('Norm stepdir:', np.linalg.norm(stepdir))
             # logger.log_tabular('TRPO/StepDirection', np.linalg.norm(stepdir))
             # logger.log_tabular('FullStepNorm', np.linalg.norm(stepdir))
-            shs = stepdir.dot(fisher_vector_product(stepdir))
+            shs = 0.5 * stepdir.dot(fisher_vector_product(stepdir))
             # logger.log_tabular('TRPO/xHx', shs)
-            lm = np.sqrt(shs / 2 * max_kl)
+            lm = np.sqrt(shs / max_kl)
             # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
             fullstep = stepdir / lm
             # print('Norm Fullstep:', )
