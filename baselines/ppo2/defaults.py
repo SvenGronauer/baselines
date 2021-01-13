@@ -54,3 +54,14 @@ def gym_locomotion_envs():
             'num_layers': 2
         }
     )
+
+
+def gym_manipulator_envs():
+    """ Default hyper-parameters for PyBullet's manipulation tasks,
+    e.g. ReacherBulletEnv-0, PusherBulletEnv-v0"""
+    return gym_locomotion_envs()
+
+
+def bullet():
+    """ Default hyper-parameters for PyBullet Envs such as KukaBulletEnv-v0."""
+    return gym_locomotion_envs()
